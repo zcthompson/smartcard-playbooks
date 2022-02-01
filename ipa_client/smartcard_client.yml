@@ -1,0 +1,121 @@
+---
+- name: install packages
+  yum:
+    name:
+      - opensc
+      - dconf
+    state: present
+
+- name: start and enable services
+  service: 
+    name: pcscd
+    state: started
+    enabled: yes
+
+- name: Ensure admin keytab is valid
+  shell: "echo {{ ipaadmin_password }} | kinit admin"
+
+- name: update IPA CA cert database
+  command: /usr/sbin/ipa-certupdate
+
+- name: enable smart card auth
+  # lock when card is removed
+  #command: authconfig --enablesssd --enablesssdauth --enablesmartcard --smartcardmodule=sssd --smartcardaction=0 --updateall
+  # allow card to be removed without locking 
+  command: authconfig --enablesssd --enablesssdauth --enablesmartcard --smartcardmodule=sssd --smartcardaction=1 --updateall
+  when: ansible_distribution_major_version == "7"
+
+- name: enable smart card auth R8
+  command: authselect enable-feature with-smartcard
+  when: ansible_distribution_major_version == "8"
+
+- name: enable smart card auth R8
+  command: authselect enable-feature with-smartcard-lock-on-removal
+  when: ansible_distribution_major_version == "8"
+
+- name: Apply all changes in authselect
+  command: authselect apply-changes
+  when: ansible_distribution_major_version == "8"
+
+
+- name: Configure for TLS part 1
+  lineinfile:
+    regexp: '^ldap_tls_cacert = /etc/ipa*'
+    insertafter: '^\[domain/fnmoc.navy.mil\]'
+    line: 'ldap_id_use_start_tls = true'
+    path: /etc/sssd/sssd.conf
+
+- name: Configure for TLS part 2
+  lineinfile:
+    regexp: '^ldap_id_use*'
+    insertafter: '^\[domain/fnmoc.navy.mil\]'
+    line: 'ldap_tls_reqcert = demand'
+    path: /etc/sssd/sssd.conf
+
+- name: modify krb5_auth_timeout
+  lineinfile:
+    regexp: '^krb5_auth_timeout*'
+    insertafter: '^\[domain/fnmoc.navy.mil\]'
+    line: 'krb5_auth_timeout = 60'
+    path: /etc/sssd/sssd.conf
+
+
+- name: modify p11_child_timeout
+  lineinfile:
+    regexp: '^p11_child_timeout*'
+    insertafter: '^\[pam\]'
+    line: 'p11_child_timeout = 60'
+    path: /etc/sssd/sssd.conf
+
+- name: configure ocsp
+  lineinfile:
+    regexp: '^certificate_verification*'
+    insertafter: '^\[sssd\]'
+    line: 'certificate_verification = no_ocsp'
+    #line: 'certificate_verification = iocsp_default_responder={{ ocsp_proxy }},ocsp_default_responder_signing_cert={{ ocsp_cert_nick }}'
+    path: /etc/sssd/sssd.conf
+
+- name: configure sssd to use short usernames
+  lineinfile:
+    regexp: '^full_name_format*'
+    insertafter: '^\[sssd\]'
+    line: 'full_name_format = %1$s'
+    path: /etc/sssd/sssd.conf
+
+- name: restart sssd
+  systemd:
+    name: sssd
+    state: restarted
+
+- name: ensure dns_lookup_realm is true 
+  lineinfile:
+    regexp: 'dns_lookup_realm.*'
+    line: '  dns_lookup_realm = true'
+    path: /etc/krb5.conf
+
+- name: ensure dns_lookup_kdc is true 
+  lineinfile:
+    regexp: 'dns_lookup_kdc.*'
+    line: '  dns_lookup_kdc = true'
+    path: /etc/krb5.conf
+
+- name: Copy config client for smart card auth to target host
+  copy:
+    src: files/config-client-for-smart-card-auth.sh
+    dest: /root/config-client-for-smart-card-auth.sh
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Copy current CA for smart card auth run
+  copy:
+    src: /etc/ipa/ca.crt
+    dest: /root/ca.crt
+    remote_src: yes
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Run smart card auth for client
+  shell: /root/config-client-for-smart-card-auth.sh /root/ca.crt
+  ignore_errors: True
