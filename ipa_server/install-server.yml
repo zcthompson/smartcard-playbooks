@@ -2,21 +2,14 @@
 - name: Playbook to configure IPA servers
   hosts: ipaservers
   vars:
-    ipaadmin_password: 'Nc254yp1%'
-    ipadm_password: 'Nc254yp1%'
-    ipaserver_domain: zcthome.lan
-    ipaserver_realm: zcthome.lan
+    ipaadmin_password: 'password'
+    ipadm_password: 'password'
+    ipaserver_domain: example.com
+    ipaserver_realm: example.com
     ipa_smart_card_config: yes
     ipaserver_setup_dns: yes
     ipaserver_auto_forwarders: yes
     ipaserver_auto_reverse: yes
-    ipaserver_setup_adtrust: no
-    ipa_ad_group_name: ad_external
-    ipaserver_ad_domain: AD.ZCTHOME.LAN
-    windows_admin_user: Administrator
-    windows_admin_password: 'Nc254yp1%'
-    ad_domain_servers:
-      - '192.168.11.210'
   become: true
 
   roles:
