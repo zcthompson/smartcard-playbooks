@@ -29,7 +29,7 @@
   when:
     - state|default('present') == 'present'
     - inventory_hostname not in groups['ipaclients']
-    - ipa_smart_card_config | bool
+    - smart_card_server | bool
 
 - name: Uninstall IPA server
   include_tasks: uninstall.yml
