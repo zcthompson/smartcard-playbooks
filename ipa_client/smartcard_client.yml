@@ -18,6 +18,36 @@
 - name: update IPA CA cert database
   command: /usr/sbin/ipa-certupdate
 
+- name: Copy Root and Sub chain to client
+  copy:
+    src: "{{ item }}"
+    dest: "/root/"
+    owner: root
+    group: root
+    mode: '0644'
+  with_fileglob:
+    - "roles/ipaserver/files/{{ current_cert_version}}/*.pem"
+
+- name: Import CA trust chain
+  copy:
+    src: /root/DoD_CAs.pem
+    dest: /etc/pki/ca-trust/source/anchors/DoD_CAs.pem
+    owner: root
+    group: root
+    mode: '0644'
+    remote_src: yes
+
+- name: Run CA system update
+  shell: update-ca-trust
+
+- name: Clean up certificates
+  file:
+    path: "/root/{{ item }}"
+    state: absent
+  with_fileglob:
+    - "*.pem"
+
+
 - name: enable smart card auth
   # lock when card is removed
   #command: authconfig --enablesssd --enablesssdauth --enablesmartcard --smartcardmodule=sssd --smartcardaction=0 --updateall
@@ -33,29 +63,20 @@
   command: authselect enable-feature with-smartcard-lock-on-removal
   when: ansible_distribution_major_version == "8"
 
+- name: enable local home directory
+  command: authselect enable-feature with-mkhomedir
+  when: 
+    - ansible_distribution_major_version == "8"
+    - make_home | bool 
+
 - name: Apply all changes in authselect
   command: authselect apply-changes
   when: ansible_distribution_major_version == "8"
 
-
-- name: Configure for TLS part 1
-  lineinfile:
-    regexp: '^ldap_tls_cacert = /etc/ipa*'
-    insertafter: '^\[domain/fnmoc.navy.mil\]'
-    line: 'ldap_id_use_start_tls = true'
-    path: /etc/sssd/sssd.conf
-
-- name: Configure for TLS part 2
-  lineinfile:
-    regexp: '^ldap_id_use*'
-    insertafter: '^\[domain/fnmoc.navy.mil\]'
-    line: 'ldap_tls_reqcert = demand'
-    path: /etc/sssd/sssd.conf
-
 - name: modify krb5_auth_timeout
   lineinfile:
     regexp: '^krb5_auth_timeout*'
-    insertafter: '^\[domain/fnmoc.navy.mil\]'
+    insertafter: '^\[domain*'
     line: 'krb5_auth_timeout = 60'
     path: /etc/sssd/sssd.conf
 
@@ -82,6 +103,45 @@
     line: 'full_name_format = %1$s'
     path: /etc/sssd/sssd.conf
 
+- name: Optimize CAC card configuration
+  lineinfile:
+    regexp: '^card_drivers'
+    insertafter: '^enable_pinpad = false;'
+    line: '                card_drivers = cac, PIV-II;'
+    path: /etc/opensc.conf
+
+- name: ensure dns_lookup_realm is true 
+  lineinfile:
+    regexp: 'dns_lookup_realm.*'
+    line: '  dns_lookup_realm = true'
+    path: /etc/krb5.conf
+
+- name: ensure dns_lookup_kdc is true 
+  lineinfile:
+    regexp: 'dns_lookup_kdc.*'
+    line: '  dns_lookup_kdc = true'
+    path: /etc/krb5.conf
+
+- name: ensure eku checking is disabled
+  lineinfile:
+    regexp: 'pkinit_eku_checking = none'
+    line: '  pkinit_eku_checking = none'
+    insertbefore: 'realms' 
+    path: /etc/krb5.conf
+
+- name: ensure kdc for IDM servers are updated
+  lineinfile:
+    regexp: "pkinit_kdc_hostname = {{ inventory_hostnames.groups['ipaservers'] }}"
+    line: "  pkinit_kdc_hostname = {{ inventory_hostnames.groups['ipaservers'] }}"
+    insertbefore: 'realms' 
+    path: /etc/krb5.conf
+
+- name: configure alias for pkinit
+  lineinfile:
+     regexp: '^alias pkinit*'
+     line: alias pkinit="kinit -X X509_user_identity='PKCS11:opensc-pkcs11.so'"
+     path: /etc/bashrc
+
 - name: restart sssd
   systemd:
     name: sssd
@@ -99,14 +159,6 @@
     line: '  dns_lookup_kdc = true'
     path: /etc/krb5.conf
 
-- name: Copy config client for smart card auth to target host
-  copy:
-    src: files/config-client-for-smart-card-auth.sh
-    dest: /root/config-client-for-smart-card-auth.sh
-    owner: root
-    group: root
-    mode: '0755'
-
 - name: Copy current CA for smart card auth run
   copy:
     src: /etc/ipa/ca.crt
@@ -116,6 +168,17 @@
     group: root
     mode: '0600'
 
-- name: Run smart card auth for client
-  shell: /root/config-client-for-smart-card-auth.sh /root/ca.crt
+- name: Copy script from role
+  copy:
+    src: files/config-client-for-smart-card-auth.sh
+    dest: /root/config-client-for-smart-card-auth.sh
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Run config server for Smart Card script
+  shell: ./config-client-for-smart-card-auth.sh /etc/ipa/ca.crt
+  args:
+    chdir: /root
+  register: sc_script_debug
   ignore_errors: True
