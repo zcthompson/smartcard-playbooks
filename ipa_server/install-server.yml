@@ -2,14 +2,17 @@
 - name: Playbook to configure IPA servers
   hosts: ipaservers
   vars:
-    ipaadmin_password: 'password'
-    ipadm_password: 'password'
-    ipaserver_domain: example.com
-    ipaserver_realm: example.com
-    smart_card_server: yes
+    ipaadmin_password: 'password!'
+    ipadm_password: 'password!'
+    ipaserver_domain: lab.lan
+    ipaserver_realm: lab.lan
+    smart_card_server: no
     ipaserver_setup_dns: yes
     ipaserver_auto_forwarders: yes
     ipaserver_auto_reverse: yes
+    ipaserver_setup_adtrust: no
+    dod_config: yes
+    make_home: yes
   become: true
 
   roles:

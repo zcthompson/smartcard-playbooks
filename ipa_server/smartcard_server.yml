@@ -82,7 +82,7 @@
 - name: modify krb5_auth_timeout
   lineinfile:
     regexp: '^krb5_auth_timeout*'
-    insertafter: '^\[domain/fnmoc.navy.mil\]'
+    insertafter: '^\[domain/'
     line: 'krb5_auth_timeout = 60'
     path: /etc/sssd/sssd.conf
 
@@ -99,6 +99,7 @@
     insertafter: '^\[sssd\]'
     line: 'certificate_verification = no_ocsp'
     path: /etc/sssd/sssd.conf
+
 
 - name: Generate server configuration for smartcard
   shell: ipa-advise config-server-for-smart-card-auth > /root/config-server-for-smart-card-auth.sh
