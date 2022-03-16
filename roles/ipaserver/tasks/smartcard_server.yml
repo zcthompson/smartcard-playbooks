@@ -1,0 +1,168 @@
+---
+- name: Ensure admin keytab is valid
+  shell: "echo {{ ipaadmin_password }} | kinit admin"
+
+- name: Obtain DoD certificates
+  get_url:
+    url: https://dl.dod.cyber.mil/wp-content/uploads/pki-pke/zip/certificates_pkcs7_DoD.zip
+    dest: roles/ipaserver/files/
+  become: no
+  delegate_to: localhost
+
+- name: Unpack
+  unarchive:
+    src: files/certificates_pkcs7_DoD.zip
+    dest: roles/ipaserver/files/
+  become: no
+  delegate_to: localhost
+
+- name: Convert certificate chain to pem
+  shell: "openssl pkcs7 -in roles/ipaserver/files/{{ current_cert_version }}/{{ current_cert_version }}.pem.p7b -print_certs -out roles/ipaserver/files/{{ current_cert_version }}/DoD_CAs.pem"
+  become: no
+  delegate_to: localhost
+  
+- name: Divide certificates
+  shell: awk 'BEGIN {c=0;} /subject/{c++} { print > "cert." c ".pem"}' < DoD_CAs.pem
+  args:
+    chdir: "roles/ipaserver/files/{{ current_cert_version }}/"
+  become: no
+  delegate_to: localhost
+
+- name: Copy to master server
+  copy:
+    src: "{{ item }}"
+    dest: "/root/"
+    owner: root
+    group: root
+    mode: '0644'
+  with_fileglob:
+    - "files/{{ current_cert_version}}/*.pem"
+
+- name: Set up http to delegate for webUI smartcard
+  shell: ipa service-mod --ok-to-auth-as-delegate=True HTTP/$(hostname)
+  register: delegate_out
+  failed_when: not delegate_out.stderr_lines is search("no modifications to be performed") and delegate_out.rc == 1
+
+
+- name: Add certificates to NSSDB
+  shell: for i in {1..46}; do echo $i; certutil -A -i /root/cert.$i.pem -n cert.$i -d /etc/pki/nssdb -t CT,C,C; done
+  ignore_errors: yes
+
+- name: Add Root and Sub CAs to IDM
+  shell: for i in {1..46}; do ipa-cacert-manage install /root/cert.$i.pem; done
+  no_log: true
+  ignore_errors: yes
+
+- name: Repeat incase of stragglers for Root and Sub to IDM
+  shell: for i in {1..46}; do ipa-cacert-manage install /root/cert.$i.pem; done
+  no_log: true
+  ignore_errors: yes
+
+
+- name: Import CA trust chain
+  copy: 
+    src: /root/DoD_CAs.pem
+    dest: /etc/pki/ca-trust/source/anchors/DoD_CAs.pem
+    owner: root
+    group: root
+    mode: '0644'
+    remote_src: yes
+
+- name: Run CA system update
+  shell: update-ca-trust
+
+- name: Run Certificate Update
+  shell: ipa-certupdate
+
+- name: restart httpd
+  service:
+    name: httpd
+    state: restarted
+
+- name: modify krb5_auth_timeout
+  lineinfile:
+    regexp: '^krb5_auth_timeout*'
+    insertafter: '^\[domain/'
+    line: 'krb5_auth_timeout = 60'
+    path: /etc/sssd/sssd.conf
+
+- name: modify p11_child_timeout
+  lineinfile:
+    regexp: '^p11_child_timeout*'
+    insertafter: '^\[pam\]'
+    line: 'p11_child_timeout = 60'
+    path: /etc/sssd/sssd.conf
+
+- name: configure ocsp
+  lineinfile:
+    regexp: '^certificate_verification*'
+    insertafter: '^\[sssd\]'
+    line: 'certificate_verification = no_ocsp'
+    path: /etc/sssd/sssd.conf
+
+
+- name: Generate server configuration for smartcard
+  shell: ipa-advise config-server-for-smart-card-auth > /root/config-server-for-smart-card-auth.sh
+  ignore_errors: True
+
+- name: Configure smartcard for server script to be executed
+  file:
+    path: /root/config-server-for-smart-card-auth.sh
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Run config server for Smart Card script
+  shell: ./config-server-for-smart-card-auth.sh /etc/ipa/ca.crt
+  args:
+    chdir: /root
+  register: sc_script_debug
+  ignore_errors: True
+
+- name: Ensure OCSP is disabled in webUI for R8
+  lineinfile:
+    regexp: 'SSLOCSPEnable*'
+    line: 'SSLOCSPEnable off'
+    path: /etc/httpd/conf.d/ssl.conf
+  when: ansible_distribution_major_version == "8"
+
+- name: modify p11_child_timeout for R8
+  lineinfile:
+    regexp: '^#SSLProtocol'
+    line: 'SSLProtocol all -TLSv1 -TLSv1.1 -TLSv1.3'
+    path: /etc/httpd/conf.d/ssl.conf
+  when: ansible_distribution_major_version == "8"
+
+- name: Disable OCSP for RHEL 7 IDM
+  lineinfile:
+    regexp: '^NSSOCSP on'
+    line: 'NSSOCSP off'
+    path: /etc/httpd/conf.d/nss.conf
+  when: ansible_distribution_major_version == "7"
+
+- name: Add in changes for Edge browser compatibility
+  lineinfile:
+    regexp: '^    AuthName "Kerberos Login"'
+    insertafter: '^    AuthName "Kerberos Login"'
+    line: '    BrowserMatch MSIE gssapi-no-negotiater'
+    path: /etc/httpd/conf.d/ipa.conf
+
+- name: check to see if map rules have been setup
+  shell: 'ipa certmaprule-find | grep "Rule name:" | cut -d: -f2'
+  when: inventory_hostname in groups['ipaservers']
+  register: maprules
+
+- name: Configure map rule all DoD users
+  shell: |
+     ipa certmaprule-add dod_certs_for_all_users \
+     --maprule='(|(userPrincipal={subject_nt_principal})(samAccountName={subject_nt_principal.short_name})(userCertificate;binary={cert!bin})(ipacertmapdata=X509:<I>{issuer_dn!nss_x500}<S>{subject_dn!nss_x500}))' \
+     --matchrule='<SAN:ntPrincipalName>.*@mil<ISSUER>CN=DOD.*,OU=PKI,OU=DoD,O=U.S. Government,C=US' \
+     --domain={{ ipaserver_domain }}
+  when: 
+    - inventory_hostname in groups['ipaservers']
+    - maprules.stdout.find('dod_certs_for_all_users') == -1
+
+- name: restart httpd
+  service:
+    name: httpd
+    state: restarted
