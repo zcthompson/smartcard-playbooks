@@ -157,7 +157,7 @@
      ipa certmaprule-add dod_certs_for_all_users \
      --maprule='(|(userPrincipal={subject_nt_principal})(samAccountName={subject_nt_principal.short_name})(userCertificate;binary={cert!bin})(ipacertmapdata=X509:<I>{issuer_dn!nss_x500}<S>{subject_dn!nss_x500}))' \
      --matchrule='<SAN:ntPrincipalName>.*@mil<ISSUER>CN=DOD.*,OU=PKI,OU=DoD,O=U.S. Government,C=US' \
-     --domain={{ ipaserver_domain }}
+     --domain={{ ipaserver_domain }} --domain={{ ad_domain }}
   when: 
     - inventory_hostname in groups['ipaservers']
     - maprules.stdout.find('dod_certs_for_all_users') == -1
