@@ -13,6 +13,7 @@
     ipaserver_setup_adtrust: no
     dod_config: yes
     make_home: yes
+    ad_domain: ad.example.com
   become: true
 
   roles:
