@@ -4,7 +4,7 @@ includedir /etc/krb5.conf.d/
 includedir /var/lib/sss/pubconf/krb5.include.d/
 
 [libdefaults]
-  default_realm = LAB.LAN
+  default_realm = {{ ipaserver_realm |upper }}
   dns_lookup_realm = true
   rdns = false
   dns_canonicalize_hostname = false
@@ -21,7 +21,7 @@ pkinit_kdc_hostname = {{ hostvars[host].inventory_hostname }}
 
 
 [realms]
-  LAB.LAN = {
+  {{ ipaserver_realm |upper }} = {
   {% for host in groups['ipaservers'] %}
 kdc = {{ hostvars[host].inventory_hostname }}:88
 master_kdc = {{ hostvars[host].inventory_hostname }}:88
