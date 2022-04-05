@@ -1,0 +1,41 @@
+{{ ansible_managed }}
+
+includedir /etc/krb5.conf.d/
+includedir /var/lib/sss/pubconf/krb5.include.d/
+
+[libdefaults]
+  default_realm = LAB.LAN
+  dns_lookup_realm = true
+  rdns = false
+  dns_canonicalize_hostname = false
+  dns_lookup_kdc = true
+  ticket_lifetime = 24h
+  forwardable = true
+  udp_preference_limit = 0
+  default_ccache_name = KEYRING:persistent:%{uid}
+  pkinit_eku_checking = none
+  {% for host in groups['ipaservers'] %}
+pkinit_kdc_hostname = {{ hostvars[host].inventory_hostname }}
+  {% endfor %}
+
+
+
+[realms]
+  LAB.LAN = {
+  {% for host in groups['ipaservers'] %}
+kdc = {{ hostvars[host].inventory_hostname }}:88
+master_kdc = {{ hostvars[host].inventory_hostname }}:88
+admin_server {{ hostvars[host].inventory_hostname }}:749
+kpasswd_server = {{ hostvars[host].inventory_hostname }}:464
+default_domain = {{ ipaserver_domain }}
+  {% endfor %}
+    pkinit_anchors = FILE:/var/lib/ipa-client/pki/kdc-ca-bundle.pem
+    pkinit_pool = FILE:/var/lib/ipa-client/pki/ca-bundle.pem
+
+  }
+
+
+[domain_realm]
+  .{{ ipaserver_domain }} = {{ ipaserver_realm |upper }}
+  {{ ipaserver_domain }} = {{ ipaserver_realm |upper }}
+  {{ inventory_hostname }} = {{ ipaserver_realm |upper }}
