@@ -146,6 +146,16 @@
     insertafter: '^    AuthName "Kerberos Login"'
     line: '    BrowserMatch MSIE gssapi-no-negotiater'
     path: /etc/httpd/conf.d/ipa.conf
+    
+- name: Reload HTTPD Service
+  service:
+    name: httpd
+    state: reloaded
+
+- name: Ensure HTTP is running before map rules are configured
+  service:
+    name: httpd
+    state: started
 
 - name: check to see if map rules have been setup
   shell: 'ipa certmaprule-find | grep "Rule name:" | cut -d: -f2'
@@ -161,8 +171,20 @@
   when: 
     - inventory_hostname in groups['ipaservers']
     - maprules.stdout.find('dod_certs_for_all_users') == -1
+    
+### For only Linux based environments that don't interact with AD ###
+#- name: Configure map rule all DoD users
+#  shell: |
+#     ipa certmaprule-add dod_certs_for_all_users \
+#     --maprule='(|(employeeNumber={subject_nt_principal})(samAccountName={subject_nt_principal.short_name})(userCertificate;binary={cert!bin})(ipacertmapdata=X509:<I>{issuer_dn!nss_x500}<S>{subject_dn!nss_x500}))' \
+#     --matchrule='<SAN:ntPrincipalName>.*@mil<ISSUER>CN=DOD.*,OU=PKI,OU=DoD,O=U.S. Government,C=US' \
+#     --domain={{ ipaserver_domain }}
+#  when: 
+#    - inventory_hostname in groups['ipaservers']
+#    - maprules.stdout.find('dod_certs_for_all_users') == -1
 
-- name: restart httpd
-  service:
-    name: httpd
-    state: restarted
+#- name: Add search parameters
+#  command: ipa config-mod --usersearch="uid,givenname,sn,telephonenumber,ou,title,employeenumber"
+
+- name: Update all users for proper shell
+  command: ipa config-mod --defaultshell=/bin/bash
