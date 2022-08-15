@@ -25,7 +25,11 @@ ipasssd_enable_dns_updates: no
 ipasssd_no_krb5_offline_passwords: no
 ipasssd_preserve_sssd: no
 ipaclient_request_cert: no
+
+### smartcard client ###
 smart_card_client: no
+
+### linux workstation config ####
 
 ## cert version ##
 current_cert_version: Certificates_PKCS7_v5.9_DoD
