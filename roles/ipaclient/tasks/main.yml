@@ -28,7 +28,7 @@
   include_tasks: desktop_config.yml
   when: 
     - smart_card_client | bool
-    - dod_desktop | bool
+    - desktop_config | bool
 
 - name: Uninstall IPA client
   include_tasks: uninstall.yml

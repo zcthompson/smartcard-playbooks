@@ -2,15 +2,17 @@
 - name: Playbook to configure IPA clients with username/password
   hosts: ipaclients
   vars:
-    ipaclient_domain: example.com
-    ipaclient_realm: EXAMPLE.COM
+    ipaclient_domain: lab.lan
+    ipaclient_realm: LAB.LAN
     ipaadmin_principal: admin
     ipaadmin_password: 'password!'
     ipaclient_use_otp: no
     smart_card_client: yes
-    ipaserver_realm: EXAMPLE.COM
-    dod_desktop: yes
+    ipaserver_realm: LAB.LAN
+    ipaserver_domain: lab.lan
+    desktop_config: yes
     make_home: yes
+    ipaclient_force_join: yes
   become: true
 
   roles:
