@@ -24,9 +24,11 @@
   include_tasks: smartcard_client.yml
   when: smart_card_client | bool
 
-- name: Configure For DoD systems
-  include_tasks: dod_config.yml
-  when: dod_config | bool
+- name: Optimize for desktop clients
+  include_tasks: desktop_config.yml
+  when: 
+    - smart_card_client | bool
+    - dod_desktop | bool
 
 - name: Uninstall IPA client
   include_tasks: uninstall.yml
