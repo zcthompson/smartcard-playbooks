@@ -1,0 +1,87 @@
+- name: enable smart card auth
+  # lock when card is removed
+  #command: authconfig --enablesssd --enablesssdauth --enablesmartcard --smartcardmodule=sssd --smartcardaction=0 --updateall
+  # allow card to be removed without locking 
+  command: authconfig --enablesssd --enablesssdauth --enablesmartcard --smartcardmodule=sssd --smartcardaction=1 --enablemkhomedir --updateall
+  when: ansible_distribution_major_version == "7"
+
+- name: enable smart card auth R8
+  command: authselect enable-feature with-smartcard
+  when: ansible_distribution_major_version == "8"
+
+- name: enable smart card auth R8
+  command: authselect enable-feature with-smartcard-lock-on-removal
+  when: ansible_distribution_major_version == "8"
+
+- name: enable local home directory
+  command: authselect enable-feature with-mkhomedir
+  when:
+    - ansible_distribution_major_version == "8"
+    - make_home | bool
+
+- name: Apply all changes in authselect
+  command: authselect apply-changes
+  when: ansible_distribution_major_version == "8"
+
+- name: Enable oddjobd for local home dir
+  service:
+    name: oddjobd
+    state: started
+    enabled: yes
+
+- name: Fix known bug with workaround for policykit
+  template:
+    src: templates/42-pcsc.rules.j2
+    dest: /etc/polkit-1/rules.d/42-pcsc.rules
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Optimize CAC card configuration
+  lineinfile:
+    regexp: '^card_drivers'
+    insertafter: 'enable_pinpad = false;'
+    line: '                card_drivers = cac, PIV-II;'
+    path: /etc/opensc.conf
+
+- name: Update GDM configuration to hide previous logins for RHEL 8
+  template:
+    src: templates/00-login-screen.j2
+    dest: /etc/dconf/db/local.d/00-login-screen
+    owner: root
+    group: root
+    mode: '0644'
+  when: ansible_distribution_major_version == "8"
+
+- name: Update dconf for GDM RHEL 8
+  command: dconf update
+  when: ansible_distribution_major_version == "8"
+
+- name: Turn off gnome first setup windows
+  lineinfile:
+    line: 'X-GNOME-Autostart-enabled=false'
+    path: /etc/xdg/autostart/gnome-initial-setup-first-login.desktop 
+
+- name: Force first-setup off
+  lineinfile:
+    regexp: '^InitialSetupEnable = false'
+    insertafter: '^[daemon]'
+    line: 'InitialSetupEnable = false'
+    path: /etc/gdm/custom.conf
+
+- name: Optimize FireFox for CAC card
+  copy:
+    src: /usr/share/p11-kit/modules/opensc.module
+    dest: /etc/pkcs11/modules/opensc.module
+    owner: root
+    group: root
+    mode: '0644'
+    remote_src: yes
+
+- name: Add in config to prevent unwanted pin requests in firefox
+  lineinfile:
+    regexp: '^disable-in'
+    insertafter: '^module: opensc-pkcs11.so'
+    line: 'disable-in: firefox thunderbird'
+    path: /etc/pkcs11/modules/opensc.module
+
