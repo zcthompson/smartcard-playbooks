@@ -41,7 +41,7 @@
   shell: |
     spawn kinit admin@{{ ipaserver_realm }}
 
-    expect "Password for admin@{{ ipa_realm }}:"
+    expect "Password for admin@{{ ipaserver_realm }}:"
     send "{{ ipaadmin_password }}\n"
   args:
     executable: /usr/bin/expect
