@@ -35,16 +35,10 @@
   with_fileglob:
     - "files/{{ current_cert_version}}/*.pem"
 
-### Added in to support password complexity, thank you to Dean for helping me find this issue ###
+### Added in to support password complexity, thank you to Dean/Zach for helping me find this issue ###
 
 - name: Ensure admin keytab is valid
-  shell: |
-    spawn kinit admin@{{ ipaserver_realm }}
-
-    expect "Password for admin@{{ ipaserver_realm }}:"
-    send "{{ ipaadmin_password }}\n"
-  args:
-    executable: /usr/bin/expect
+  shell: "echo '{{ ipaadmin_password }}' | kinit" 
 
 - name: Set up http to delegate for webUI smartcard
   shell: "ipa service-mod --ok-to-auth-as-delegate=True HTTP/$(hostname)"
