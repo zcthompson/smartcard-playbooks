@@ -1,0 +1,41 @@
+### {{ ansible_managed }} ####
+
+[domain/{{ {{ result_ipaclient_test.client_domain }}]
+krb5_auth_timeout = 60
+id_provider = ipa
+ipa_server = _srv_, {{ result_ipaclient_test.servers }}
+ipa_domain = {{ result_ipaclient_test.client_domain }}
+ipa_hostname = {{ inventory_hostname }}
+auth_provider = ipa
+chpass_provider = ipa
+access_provider = ipa
+cache_credentials = True
+sudo_provider = ipa
+ldap_tls_cacert = /etc/ipa/ca.crt
+krb5_store_password_if_offline = True
+[sssd]
+full_name_format = %1$s
+certificate_verification = no_ocsp
+services = nss, pam, ssh, sudo
+
+domains = {{ result_ipaclient_test.client_domain }}
+[nss]
+homedir_substring = /home
+
+[pam]
+p11_child_timeout = 60
+
+pam_cert_auth = True
+[sudo]
+
+[autofs]
+
+[ssh]
+
+[pac]
+
+[ifp]
+
+[secrets]
+
+[session_recording]

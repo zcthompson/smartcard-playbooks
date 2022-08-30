@@ -1,10 +1,10 @@
-{{ ansible_managed }}
+###{{ ansible_managed }}####
 
 includedir /etc/krb5.conf.d/
 includedir /var/lib/sss/pubconf/krb5.include.d/
 
 [libdefaults]
-  default_realm = {{ ipaserver_realm |upper }}
+  default_realm = IMIS.COM
   dns_lookup_realm = true
   rdns = false
   dns_canonicalize_hostname = false
@@ -14,28 +14,27 @@ includedir /var/lib/sss/pubconf/krb5.include.d/
   udp_preference_limit = 0
   default_ccache_name = KEYRING:persistent:%{uid}
   pkinit_eku_checking = none
-  {% for host in groups['ipaservers'] %}
-pkinit_kdc_hostname = {{ hostvars[host].inventory_hostname }}
-  {% endfor %}
+{% for server in kdc_list %}
+  pkinit_kdc_hostname = {{ server }}
+{% endfor %}
 
 
 
 [realms]
-  {{ ipaserver_realm |upper }} = {
-  {% for host in groups['ipaservers'] %}
-kdc = {{ hostvars[host].inventory_hostname }}:88
-master_kdc = {{ hostvars[host].inventory_hostname }}:88
-admin_server {{ hostvars[host].inventory_hostname }}:749
-kpasswd_server = {{ hostvars[host].inventory_hostname }}:464
-default_domain = {{ ipaserver_domain }}
-  {% endfor %}
+  {{ result_ipaclient_test.realm }} = {
+{% for idm_primary in result_ipaclient_test.servers %}
+    kdc = {{ idm_primary }}:88
+    master_kdc = {{ idm_primary }}:88
+    admin_server = {{ idm_primary }}:749
+    kpasswd_server = {{ idm_primary }}:464
+{% endfor %}
+    default_domain = {{ result_ipaclient_test.client_domain }}
     pkinit_anchors = FILE:/var/lib/ipa-client/pki/kdc-ca-bundle.pem
     pkinit_pool = FILE:/var/lib/ipa-client/pki/ca-bundle.pem
-
   }
 
 
 [domain_realm]
-  .{{ ipaserver_domain }} = {{ ipaserver_realm |upper }}
-  {{ ipaserver_domain }} = {{ ipaserver_realm |upper }}
-  {{ inventory_hostname }} = {{ ipaserver_realm |upper }}
+  .imis.com = {{ result_ipaclient_test.realm }}
+  imis.com = {{ result_ipaclient_test.realm }}
+  {{ inventory_hostname }} = {{ result_ipaclient_test.realm }}
