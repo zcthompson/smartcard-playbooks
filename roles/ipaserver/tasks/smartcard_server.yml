@@ -35,10 +35,9 @@
   with_fileglob:
     - "files/{{ current_cert_version}}/*.pem"
 
-### Added in to support password complexity, thank you to Dean/Zach for helping me find this issue ###
-
-- name: Ensure admin keytab is valid
-  shell: "echo '{{ ipaadmin_password }}' | kinit" 
+- name: Ensure admin keytab is active
+  shell: "echo '{{ ipaadmin_password }}' | kinit"
+  no_log: True
 
 - name: Set up http to delegate for webUI smartcard
   shell: "ipa service-mod --ok-to-auth-as-delegate=True HTTP/$(hostname)"
@@ -76,36 +75,36 @@
 - name: Run Certificate Update
   shell: ipa-certupdate
 
-- name: restart httpd
-  service:
-    name: httpd
-    state: restarted
-
-- name: modify krb5_auth_timeout
+- name: Modify krb5_auth_timeout
   lineinfile:
     regexp: '^krb5_auth_timeout*'
     insertafter: '^\[domain/'
     line: 'krb5_auth_timeout = 60'
     path: /etc/sssd/sssd.conf
 
-- name: modify p11_child_timeout
+- name: Modify p11_child_timeout
   lineinfile:
     regexp: '^p11_child_timeout*'
     insertafter: '^\[pam\]'
     line: 'p11_child_timeout = 60'
     path: /etc/sssd/sssd.conf
 
-- name: configure ocsp
+- name: Configure OCSP in SSSD Config
   lineinfile:
     regexp: '^certificate_verification*'
     insertafter: '^\[sssd\]'
     line: 'certificate_verification = no_ocsp'
     path: /etc/sssd/sssd.conf
 
-
 - name: Generate server configuration for smartcard
   shell: ipa-advise config-server-for-smart-card-auth > /root/config-server-for-smart-card-auth.sh
   ignore_errors: True
+  changed_when: False
+
+- name: Generate Client Configuration for Smartcard
+  shell: ipa-advise config-client-for-smart-card-auth > /root/config-client-for-smart-card-auth.sh
+  ignore_errors: True
+  changed_when: False
 
 - name: Configure smartcard for server script to be executed
   file:
@@ -121,14 +120,14 @@
   register: sc_script_debug
   ignore_errors: True
 
-- name: Ensure OCSP is disabled in webUI for R8
+- name: Ensure OCSP is disabled in WebUI for RHEL 8
   lineinfile:
     regexp: 'SSLOCSPEnable*'
     line: 'SSLOCSPEnable off'
     path: /etc/httpd/conf.d/ssl.conf
   when: ansible_distribution_major_version == "8"
 
-- name: modify p11_child_timeout for R8
+- name: Modify to enforce TLS Protocols in IDM WebUI RHEL8
   lineinfile:
     regexp: '^#SSLProtocol'
     line: 'SSLProtocol all -TLSv1 -TLSv1.1 -TLSv1.3'
@@ -145,10 +144,10 @@
 - name: Add in changes for Edge browser compatibility
   lineinfile:
     regexp: '^    AuthName "Kerberos Login"'
-    insertafter: '^    AuthName "Kerberos Login"'
+    insertafter: '    AuthName "Kerberos Login"'
     line: '    BrowserMatch MSIE gssapi-no-negotiater'
     path: /etc/httpd/conf.d/ipa.conf
-    
+
 - name: Reload HTTPD Service
   service:
     name: httpd
@@ -167,26 +166,15 @@
 - name: Configure map rule all DoD users
   shell: |
      ipa certmaprule-add dod_certs_for_all_users \
-     --maprule='(|(userPrincipal={subject_nt_principal})(samAccountName={subject_nt_principal.short_name})(userCertificate;binary={cert!bin})(ipacertmapdata=X509:<I>{issuer_dn!nss_x500}<S>{subject_dn!nss_x500}))' \
+     --maprule='(|(employeeNumber={subject_nt_principal})(samAccountName={subject_nt_principal.short_name})(userCertificate;binary={cert!bin})(ipacertmapdata=X509:<I>{issuer_dn!nss_x500}<S>{subject_dn!nss_x500}))' \
      --matchrule='<SAN:ntPrincipalName>.*@mil<ISSUER>CN=DOD.*,OU=PKI,OU=DoD,O=U.S. Government,C=US' \
-     --domain={{ ipaserver_domain }} --domain={{ ad_domain }}
+     --domain={{ ipaserver_domain }}
   when: 
     - inventory_hostname in groups['ipaservers']
     - maprules.stdout.find('dod_certs_for_all_users') == -1
-    
-### For only Linux based environments that don't interact with AD ###
-#- name: Configure map rule all DoD users
-#  shell: |
-#     ipa certmaprule-add dod_certs_for_all_users \
-#     --maprule='(|(employeeNumber={subject_nt_principal})(samAccountName={subject_nt_principal.short_name})(userCertificate;binary={cert!bin})(ipacertmapdata=X509:<I>{issuer_dn!nss_x500}<S>{subject_dn!nss_x500}))' \
-#     --matchrule='<SAN:ntPrincipalName>.*@mil<ISSUER>CN=DOD.*,OU=PKI,OU=DoD,O=U.S. Government,C=US' \
-#     --domain={{ ipaserver_domain }}
-#  when: 
-#    - inventory_hostname in groups['ipaservers']
-#    - maprules.stdout.find('dod_certs_for_all_users') == -1
 
-#- name: Add search parameters
-#  command: ipa config-mod --usersearch="uid,givenname,sn,telephonenumber,ou,title,employeenumber"
+- name: Add search parameters
+  command: ipa config-mod --usersearch="uid,givenname,sn,telephonenumber,ou,title,employeenumber"
 
 - name: Update all users for proper shell
   command: ipa config-mod --defaultshell=/bin/bash
