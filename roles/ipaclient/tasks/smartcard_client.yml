@@ -1,22 +1,37 @@
 ---
-- name: install packages dependent on plays
+- name: Set result to list for kdc pkinit use later
+  set_fact: 
+    kdc_list: "{{ result_ipaclient_test.kdc.split(',') }}"
+
+- name: Set result for main IdM server
+  set_fact:
+    primary_kdc_server: "{{ result_ipaclient_test.realm }}"
+
+
+- name: Update SSSD.CONF for client configuration
+  template:
+    src: templates/sssd.conf.j2
+    dest: /etc/sssd/sssd.conf
+    owner: root
+    group: root
+    mode: '0640'
+
+- name: Install Required Smart Card Packages
   yum:
     name:
       - opensc
       - dconf
-      - expect
     state: present
 
-- name: start and enable services
+- name: Start and Enable services
   service: 
     name: pcscd
     state: started
     enabled: yes
 
-### Added in to support password complexity, thank you to Dean/Zach for helping me find this issue ###
-
 - name: Ensure admin keytab is valid
-  shell: "echo '{{ ipaadmin_password }}' | kinit" 
+  shell: "echo {{ ipaadmin_password }} | kinit "
+  no_log: True
 
 - name: update IPA CA cert database
   command: /usr/sbin/ipa-certupdate
@@ -65,7 +80,7 @@
     line: 'p11_child_timeout = 60'
     path: /etc/sssd/sssd.conf
 
-- name: configure ocsp
+- name: Configure OCSP in SSSD Configuration
   lineinfile:
     regexp: '^certificate_verification*'
     insertafter: '^\[sssd\]'
@@ -73,7 +88,7 @@
     #line: 'certificate_verification = iocsp_default_responder={{ ocsp_proxy }},ocsp_default_responder_signing_cert={{ ocsp_cert_nick }}'
     path: /etc/sssd/sssd.conf
 
-- name: configure sssd to use short usernames
+- name: Configure sssd to use short usernames
   lineinfile:
     regexp: '^full_name_format*'
     insertafter: '^\[sssd\]'
